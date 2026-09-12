@@ -55,7 +55,9 @@ header{position:relative;z-index:2}
 .refresh-mark{user-select:none;-webkit-touch-callout:none;flex:none}
 .compose-action{width:32px;height:40px;display:grid;place-items:center;flex:none;color:var(--muted)}
 .compose-action svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-#fileChips{display:flex;gap:6px;overflow-x:auto;max-height:65px}
+#fileChips{display:flex;gap:6px;overflow-x:auto;max-height:140px}
+.image-preview{display:block;width:100%;max-width:320px;height:auto;max-height:420px;object-fit:contain;border-radius:14px;margin-top:12px;background:var(--surface)}
+.file-chip .image-preview{width:64px;height:64px;object-fit:cover;margin:6px 0 0;border-radius:8px}
 .file-chip{font-size:11px;color:var(--accent-text);background:var(--accent-surface);border:1px solid var(--accent-line);border-radius:10px;padding:10px;margin-bottom:8px;max-width:230px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;flex:none;min-height:44px}
 #replyPreview{display:flex;align-items:center;gap:10px;justify-content:space-between;font-size:12px;border-left:2px solid var(--accent-text);padding-left:10px;color:var(--muted)}
 #replyPreview button{min-width:44px;min-height:44px}

@@ -22,6 +22,13 @@ function updateHealth(){if(!connected||statusOverride)return;const minutes=Math.
 setInterval(updateHealth,30000);
 function filterMessages(){const query=$('searchInput').value.trim().toLowerCase();let count=0;document.querySelectorAll('#messages .message').forEach(row=>{const message=messages.find(m=>'message:'+m.id===row.dataset.key);row.hidden=!!query&&!((message?.text||'')+' '+(message?.attachments||[]).join(' ')).toLowerCase().includes(query);if(!row.hidden)count++;});document.querySelectorAll('#messages .day').forEach(row=>row.hidden=!!query);$('searchCount').textContent=query?`${count} matches in saved messages`:'';}
 function addMessageText(element,text){const parts=text.split(/(```[\s\S]*?```)/g);for(const part of parts){if(part.startsWith('```')){const pre=document.createElement('pre'),code=document.createElement('code');code.textContent=part.slice(3,-3).replace(/^[a-zA-Z0-9_+-]*\n/,'');pre.append(code);element.append(pre);}else addLinks(element,part);}}
+function appendImagePreview(parent,source,name){
+ if(typeof source!=='string'||!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(source))return;
+ const image=document.createElement('img');image.className='image-preview';image.alt=name;image.src=source;image.decoding='async';
+ image.addEventListener('error',()=>image.remove());
+ image.addEventListener('load',()=>{const area=$('timeline');if(area.scrollHeight-area.scrollTop-area.clientHeight<440)window.motion?.toLatest(false);});
+ parent.append(image);
+}
 function addLinks(element,text){const parts=text.split(/(https?:\/\/[^\s<>]+)/g);for(const part of parts){if(/^https?:\/\//.test(part)){const a=document.createElement('a');a.href=part;a.textContent=part;a.addEventListener('click',e=>{e.preventDefault();native('openUrl',part);});element.append(a);}else element.append(document.createTextNode(part));}}
 function renderDevlog(){const target=$('devlogEntries');if(target.childElementCount)return;for(const entry of devlogEntries){const article=document.createElement('article');article.className='devlog-entry';const meta=document.createElement('div');meta.className='devlog-meta';meta.textContent=`${entry.version} · ${entry.date}`;const title=document.createElement('h3');title.textContent=entry.title;const summary=document.createElement('p');summary.textContent=entry.summary;const notes=document.createElement('ul');for(const note of entry.notes){const item=document.createElement('li');item.textContent=note;notes.append(item);}article.append(meta,title,summary,notes);target.append(article);}}
 function render(data){
@@ -39,7 +46,7 @@ function render(data){
   if(!message.outgoing){const who=document.createElement('div');who.className='who';who.textContent='↗  INSTINCT';row.append(who);}
   const vault=!message.outgoing?VaultCards.extract(message.text||''):{text:message.text||'',urls:[]};
   const bubble=document.createElement('div');bubble.className='bubble';if(vault.text||!vault.urls.length)addMessageText(bubble,vault.text||'(Attachment)');
-  for(const attachment of message.attachments||[]){const button=document.createElement('button');button.className='attachment';button.textContent='↗ '+attachment+' · Open in Gmail';button.onclick=()=>native('openGmail');bubble.append(button);}
+  (message.attachments||[]).forEach((attachment,index)=>{const preview=(message.previews||[]).find(item=>item.index===index)?.preview;appendImagePreview(bubble,preview,attachment);const button=document.createElement('button');button.className='attachment';button.textContent='↗ '+attachment+' · Open in Gmail';button.onclick=()=>native('openGmail');bubble.append(button);});
   if(bubble.childNodes.length)row.append(bubble);
   for(const url of vault.urls)row.append(VaultCards.card(url,url=>native('openUrl',url)));
   const meta=document.createElement('div');meta.className='meta';const time=document.createElement('span');
@@ -61,7 +68,7 @@ function render(data){
  });
 }
 window.receive=(type,data)=>{
- if(type==='compose')composeState(data);
+ if(type==='compose'){composeState(data);[...$('fileChips').children].forEach((chip,index)=>appendImagePreview(chip,data.files?.[index]?.preview,data.files?.[index]?.name||'Attached image'));}
  if(type==='fileBusy'){fileBusy=data.busy;updateComposer();if(fileBusy)notice('Preparing attachment…');}
  if(type==='health'){lastChecked=data.lastChecked||0;$('olderButton').hidden=!data.hasOlder;updateHealth();}
  if(type==='draft'){$('draft').value=data.text||'';updateComposer();}

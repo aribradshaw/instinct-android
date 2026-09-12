@@ -10,6 +10,7 @@ A focused Android inbox for your Instinct email conversation, powered directly b
 
 - A clean, searchable chat view of the Gmail thread with drafts, replies, copy, older history, and editable voice dictation.
 - Attach up to 8 files, 12 MB combined. Files remain encrypted on the phone until sent or removed.
+- Image attachments appear inline in drafts and sent/received messages. Encrypted local previews are resized for chat; original files remain available in Gmail. Remote email images stay blocked.
 - Reply alerts, configurable foreground and background checks, appearance choices, and a Gmail guide for preventing duplicate Gmail notifications.
 - Clear delivered, failed, and unconfirmed send states. Unconfirmed email is never retried automatically.
 - Local-only encrypted account settings, message cache, drafts, and pending sends.

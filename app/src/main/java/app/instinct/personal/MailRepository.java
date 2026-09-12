@@ -24,11 +24,11 @@ final class MailRepository {
     synchronized void draft(String text) throws Exception { vault.write("draft.enc", text); }
     synchronized JSONArray draftFiles() throws Exception { return new JSONArray(vault.read("draft-files.enc","[]")); }
     synchronized JSONArray fileLabels() throws Exception {
-        JSONArray labels=new JSONArray(),files=draftFiles();for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);labels.put(new JSONObject().put("name",f.getString("name")).put("size",f.getInt("size")));}return labels;
+        JSONArray labels=new JSONArray(),files=draftFiles();for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);labels.put(new JSONObject().put("name",f.getString("name")).put("size",f.getInt("size")).put("preview",f.optString("preview")));}return labels;
     }
     synchronized void addFile(String name,String type,byte[] bytes)throws Exception {
         JSONArray files=draftFiles();MailAttachment safe=new MailAttachment(name,type,bytes);
-        files.put(new JSONObject().put("name",safe.name).put("type",safe.type).put("size",bytes.length).put("data",Base64.getEncoder().encodeToString(bytes)));
+        files.put(new JSONObject().put("name",safe.name).put("type",safe.type).put("size",bytes.length).put("data",Base64.getEncoder().encodeToString(bytes)).put("preview",ImagePreview.create(bytes)));
         MailAttachment.validate(decodeFiles(files));vault.write("draft-files.enc",files.toString());
     }
     private List<MailAttachment> decodeFiles(JSONArray files)throws Exception {
@@ -114,12 +114,22 @@ final class MailRepository {
         }
         return "";
     }
-    private void attachments(Part part, JSONArray target, int depth) throws Exception {
+    private void attachments(Part part, JSONArray target, JSONArray previews, int depth) throws Exception {
         if (depth > 12) return;
-        if (part.getFileName() != null) { target.put(MimeUtility.decodeText(part.getFileName())); return; }
+        if (part.getFileName() != null || part.isMimeType("image/*")) {
+            String name=part.getFileName()!=null?MimeUtility.decodeText(part.getFileName()):"Image";
+            int index=target.length();target.put(name);
+            if (part.isMimeType("image/*") && previews.length()<8 && part.getSize()<=ImagePreview.MAX_BYTES) {
+                try(InputStream input=part.getInputStream()) {
+                    String preview=ImagePreview.create(ImagePreview.bounded(input));
+                    if(!preview.isEmpty())previews.put(new JSONObject().put("index",index).put("preview",preview));
+                } catch(IOException ignored) { /* Preserve Gmail fallback for oversized or unreadable images. */ }
+            }
+            return;
+        }
         if (part.isMimeType("multipart/*")) {
             Multipart multi=(Multipart)part.getContent();
-            for(int i=0;i<multi.getCount();i++) attachments(multi.getBodyPart(i),target,depth+1);
+            for(int i=0;i<multi.getCount();i++) attachments(multi.getBodyPart(i),target,previews,depth+1);
         }
     }
     synchronized JSONArray sync() throws Exception {return sync(false);}
@@ -143,7 +153,7 @@ final class MailRepository {
             Message[] messages=all.search(peers);
             FetchProfile uids=new FetchProfile();uids.add(UIDFolder.FetchProfileItem.UID);all.fetch(messages,uids);
             IMAPFolder imap=(IMAPFolder)all;long validity=imap.getUIDValidity();JSONObject cursor=syncState();
-            boolean same=cursor.optLong("validity")==validity;
+            boolean same=cursor.optLong("validity")==validity && cursor.optInt("imageSchema")==1;
             long newest=same?cursor.optLong("newest"):0,oldest=same?cursor.optLong("oldest",Long.MAX_VALUE):Long.MAX_VALUE;
             List<Message> candidates=new ArrayList<>();
             for(Message m:messages){long uid=imap.getUID(m);if(older?uid<oldest:uid>newest)candidates.add(m);}
@@ -160,13 +170,13 @@ final class MailRepository {
                 if(!incoming&&!outgoing) continue;
                 String[] ids=msg.getHeader("Message-ID");
                 String id=ids!=null&&ids.length>0?ids[0]:"imap-"+((IMAPFolder)all).getUIDValidity()+"-"+((IMAPFolder)all).getUID(msg);
-                if(map.containsKey(id)) continue;
-                String raw=content(msg,0).trim(); JSONArray files=new JSONArray(); attachments(msg,files,0);
+                if(map.containsKey(id)&&map.get(id).has("previews")) continue;
+                String raw=content(msg,0).trim(); JSONArray files=new JSONArray(),previews=new JSONArray(); attachments(msg,files,previews,0);
                 Date date=msg.getSentDate()!=null?msg.getSentDate():msg.getReceivedDate();
                 map.put(id,new JSONObject().put("id",id).put("outgoing",outgoing).put("text",MailText.conversational(raw)).put("raw",raw)
-                    .put("time",date!=null?date.getTime():System.currentTimeMillis()).put("subject",msg.getSubject()).put("attachments",files).put("status",outgoing?"sent":"received"));
+                    .put("time",date!=null?date.getTime():System.currentTimeMillis()).put("subject",msg.getSubject()).put("attachments",files).put("previews",previews).put("status",outgoing?"sent":"received"));
             }
-            cursor.put("initialized",true).put("validity",validity).put("newest",newest).put("oldest",oldest)
+            cursor.put("initialized",true).put("imageSchema",1).put("validity",validity).put("newest",newest).put("oldest",oldest)
                 .put("hasOlder",messages.length>0&&imap.getUID(messages[0])<oldest).put("lastChecked",System.currentTimeMillis());
             // Persist message data before advancing the cursor so an interrupted sync can safely repeat.
             JSONArray saved=new JSONArray();for(JSONObject value:map.values())saved.put(value);vault.write("messages.enc",sorted(saved).toString());
@@ -191,8 +201,9 @@ final class MailRepository {
         String subject=reply!=null?reply.optString("subject",SUBJECT):SUBJECT;
         MimeMessage msg=OutboundMail.create(session,text,ACCOUNT,PEER,subject,reply!=null?reply.getString("id"):null,attachments);
         JSONArray names=new JSONArray();for(MailAttachment file:attachments)names.put(file.name);
+        JSONArray previews=new JSONArray();for(int i=0;i<files.length();i++){JSONObject file=files.getJSONObject(i);String preview=file.optString("preview");if(preview.isEmpty())preview=ImagePreview.create(attachments.get(i).bytes);if(!preview.isEmpty())previews.put(new JSONObject().put("index",i).put("preview",preview));}
         JSONObject pending=new JSONObject().put("id",msg.getMessageID()).put("outgoing",true).put("text",text).put("raw",text)
-            .put("time",System.currentTimeMillis()).put("subject",msg.getSubject()).put("status","unconfirmed").put("attachments",names).put("files",files).put("replyId",selected);
+            .put("time",System.currentTimeMillis()).put("subject",msg.getSubject()).put("status","unconfirmed").put("attachments",names).put("previews",previews).put("files",files).put("replyId",selected);
         JSONArray queue=new JSONArray(vault.read("pending.enc","[]")); queue.put(pending); vault.write("pending.enc",queue.toString());
         boolean submitted=false;
         try (Transport transport=session.getTransport("smtps")) {
