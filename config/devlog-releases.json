@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.0.7",
+    "date": "2026-09-11",
+    "title": "Render image attachments inline in chats and drafts",
+    "summary": "Source update. See the linked commit for details.",
+    "notes": [
+      "Render image attachments inline in chats and drafts"
+    ],
+    "commit": "cc9576328d88b332fbcce00de047c7e5d553c205",
+    "author": {
+      "name": "Ari Bradshaw",
+      "githubLogin": "aribradshaw"
+    }
+  },
+  {
     "version": "1.0.6",
     "date": "2026-09-11",
     "title": "Show incoming Instinct vault requests as animated cards",
