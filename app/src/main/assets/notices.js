@@ -10,7 +10,17 @@
   deadline=performance.now()+remaining;timer=setTimeout(()=>dismiss(),remaining);
  }
  function cancelAnimation(){animation?.cancel();animation=null;}
- function position(){const composer=document.getElementById('composer');const sheet=document.querySelector('dialog[open]');card.style.bottom=(sheet?16:Math.max(16,composer.hidden?16:composer.getBoundingClientRect().height+12))+'px';}
+ function raise(){
+  if(typeof card.showPopover!=='function')return;
+  const focused=card.contains(document.activeElement)?document.activeElement:null;
+  if(card.matches(':popover-open'))card.hidePopover();card.showPopover();focused?.focus({preventScroll:true});
+ }
+ function position(){
+  const composer=document.getElementById('composer'),sheet=[...document.querySelectorAll('dialog[open]')].at(-1);
+  // A modal makes nodes outside its DOM subtree inert, even if they are popovers.
+  const parent=sheet||document.getElementById('app');if(card.parentElement!==parent)parent.append(card);
+  card.style.bottom=(sheet?16:Math.max(16,composer.hidden?16:composer.getBoundingClientRect().height+12))+'px';
+ }
  async function dismiss(direction=0){
   if(card.hidden)return;
   const current=++sequence;pause();drag=null;cancelAnimation();
@@ -30,7 +40,7 @@
   if(!visible)returnFocus=document.activeElement;
   if(!duplicate)text.textContent=message;
   remaining=Math.min(14000,Math.max(6500,message.length*45));card.hidden=false;position();
-  if(typeof card.showPopover==='function'&&!card.matches(':popover-open'))card.showPopover();
+  raise();
   if(!visible&&!reduced.matches)animation=card.animate([{transform:'translateY(8px)',opacity:0},{transform:'none',opacity:1}],{duration:200,easing:'ease-out'});
   resume();
  }
@@ -64,7 +74,7 @@
  card.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dismiss();}});
  close.onclick=()=>dismiss();document.addEventListener('visibilitychange',()=>document.hidden?pause():resume());
  new ResizeObserver(position).observe(document.getElementById('composer'));
- new MutationObserver(position).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+ new MutationObserver(()=>{position();if(!card.hidden)raise();}).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
  window.addEventListener('resize',position);
  window.notices={show,dismiss};
 })();
