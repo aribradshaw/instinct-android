@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.0.6",
+    "date": "2026-09-11",
+    "title": "Show incoming Instinct vault requests as animated cards",
+    "summary": "Source update. See the linked commit for details.",
+    "notes": [
+      "Show incoming Instinct vault requests as animated cards"
+    ],
+    "commit": "430ebb3719ef812502dbdda8ce4dfc652bd704c3",
+    "author": {
+      "name": "Ari Bradshaw",
+      "githubLogin": "aribradshaw"
+    }
+  },
+  {
     "version": "1.0.5",
     "date": "2026-09-11",
     "title": "Keep notices above active sheets",

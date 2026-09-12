@@ -4,7 +4,7 @@ if (rootProject.file('local.properties').exists()) rootProject.file('local.prope
 android {
     namespace 'app.instinct.personal'
     compileSdk 36
-    defaultConfig { applicationId 'app.instinct.personal'; minSdk 30; targetSdk 35; versionCode 6; versionName '1.0.5'; testInstrumentationRunner 'android.test.InstrumentationTestRunner' }
+    defaultConfig { applicationId 'app.instinct.personal'; minSdk 30; targetSdk 35; versionCode 7; versionName '1.0.6'; testInstrumentationRunner 'android.test.InstrumentationTestRunner' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     signingConfigs {
         release {
