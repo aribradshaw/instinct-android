@@ -1,6 +1,6 @@
 {
   "name": "instinct-android",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "An unofficial Android chat companion for Instinct, powered by your Gmail connection.",
   "license": "MIT",
