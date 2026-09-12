@@ -1,6 +1,6 @@
 # Instinct Companion for Android
 
-**Email underneath. Conversation on top.**
+An unofficial Android app for messaging Instinct through Gmail.
 
 An unofficial, open-source Android app that turns your Instinct email conversation into a focused messaging experience. Your phone connects directly to Gmail. No relay server, subscription to this app, or running desktop is required.
 
@@ -10,17 +10,20 @@ An unofficial, open-source Android app that turns your Instinct email conversati
 
 ## What it does
 
-- Displays incoming and sent Instinct emails as selectable chat bubbles in a dark olive and lime interface with a saved light/dark switch.
+- Displays incoming and sent Instinct emails as selectable chat bubbles in a dark olive and lime interface.
 - Sends plain-text messages from your own Gmail account, preserving the subject and reply headers.
 - Saves drafts, conversation history, pending sends, and credentials encrypted on the phone.
 - Shows explicit sent, failed, and unconfirmed states. It never automatically retries an uncertain send.
 - Refreshes every 15 seconds while open and schedules periodic background reply notifications.
+- Elastic stretch at both conversation edges, sliding sheets with grip dismissal, press feedback, and system-respecting haptics. Reduced-motion preferences disable movement.
+- New replies preserve your reading position. A floating latest/new-replies button returns to the conversation's end, and only newly added messages animate.
+- Settings → Notifications controls Instinct reply alerts, shows Android permission/channel status, opens sound settings, and offers a local test notification. The Gmail guide explains a sender filter and quiet label for avoiding duplicate alerts; Gmail settings are not changed by the app.
 - Provides the full original email, clickable links, attachment links to Gmail, and Android text sharing into the composer.
 - Includes a public DevLog powered by [@aribradshaw/devlog](https://github.com/aribradshaw/devlog).
 
 ## Install
 
-1. Download `instinct-companion-0.1.0.apk` from [Releases](https://github.com/aribradshaw/instinct-android/releases/latest).
+1. Download `instinct-companion-1.0.1.apk` from [Releases](https://github.com/aribradshaw/instinct-android/releases/latest).
 2. Open it on an Android 11 or newer phone. Allow installation from the browser or file manager if Android asks.
 3. Open **Instinct** and connect your account below.
 
@@ -49,6 +52,7 @@ Android Keystore protects AES-GCM encrypted account configuration, password, mes
 
 - Text composition only. Incoming attachment names open Gmail; file uploads and voice notes are not implemented.
 - Background checks run about every 15 minutes and can take longer under Android battery restrictions. This is periodic email sync, not instant push.
+- Notification detection compares message identities, so a new reply with an older sender timestamp still qualifies. Initial history import stays quiet, and foreground reading does not produce duplicate app alerts.
 - Each sync reads up to 200 latest matching messages and retains previously cached history.
 - Gmail All Mail must be available through IMAP. This is normally available by default; check Gmail label settings if you encounter an error.
 - The app does not mark messages read, change labels, delete emails, or send messages automatically.
@@ -84,6 +88,8 @@ npm run build:devlog
 ```
 
 The static output is in `site/dist/`. The site imports the shared DevLog package for release validation, version alignment, search, and source metadata. The host controls the styling and public content. GitHub Pages deploys it from `main` through `.github/workflows/pages.yml`.
+
+Versioning uses year.month.version, starting at **1.0.1**, with America/Phoenix calendar boundaries and the shared DevLog package. Same-month releases increment the last number (1.0.2, 1.0.3). Run `npm run version:next` to calculate the next version; pass a release date with `npm run version:next -- 2026-10-01` for a future month. Android versionCode also increases for each installable release.
 
 To publish an update, edit `config/devlog-releases.json` and align the version in `package.json`, Android's `versionName`, and visible app labels. The build fails on DevLog/package version mismatch. Use only public release copy and synthetic preview messages.
 

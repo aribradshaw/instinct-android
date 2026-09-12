@@ -8,6 +8,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.*;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.*;
 import android.webkit.*;
@@ -80,13 +81,17 @@ public final class MainActivity extends Activity {
     private void initial(){worker.submit(()->{try {
         JSONObject init=new JSONObject().put("connected",repo.connected()).put("account",repo.account()).put("peer",repo.peer()).put("draft",repo.draft()).put("messages",repo.cached());
         if(Intent.ACTION_SEND.equals(getIntent().getAction())) {String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT); if(shared!=null) init.put("draft",shared);}
-        event("init",init); if(repo.connected()){SyncJob.schedule(this);refresh(false);}
+        event("init",init);notificationState();if(repo.connected()){SyncJob.schedule(this);refresh(false);}
     }catch(Exception e){toast("Could not read encrypted storage. Reconnect Gmail in settings.");}});}
     private void refresh(boolean manual){
         if(!loaded||!syncing.compareAndSet(false,true))return;
-        worker.submit(()->{try{if(repo.connected()){state("Syncing Gmail…");repo.sync();publish();state("Synced just now");if(manual)toast("Conversation is up to date.");}}
-        catch(Exception e){state("Offline · cached messages");if(manual)toast(MailRepository.friendly(e));}finally{syncing.set(false);}});
+        event("sync",object("busy",true));
+        worker.submit(()->{try{if(repo.connected()){if(manual)state("Refreshing…");repo.sync();publish();state("Up to date");if(manual)toast("Conversation is up to date.");}}
+        catch(Exception e){state("Offline · cached messages");if(manual)toast(MailRepository.friendly(e));}finally{syncing.set(false);event("sync",object("busy",false));}});
     }
+    private void notificationState(){try{event("notifications",new JSONObject().put("enabled",ReplyNotifications.enabled(this)).put("allowed",ReplyNotifications.allowed(this)));}catch(JSONException ignored){}}
+    private void notificationSettings(){try{startActivity(new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID,ReplyNotifications.CHANNEL));}catch(ActivityNotFoundException e){startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);notificationState();}
     private void connectDialog(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);int pad=(int)(24*getResources().getDisplayMetrics().density);box.setPadding(pad,pad/2,pad,pad/2);
         TextView info=new TextView(this);info.setText("Use the Gmail account Instinct recognizes and the email address Instinct gave you. Create a Google app password named Instinct, then paste its 16 letters below. It grants email access and is stored encrypted on this phone.");info.setTextSize(15);box.addView(info);
@@ -100,7 +105,7 @@ public final class MainActivity extends Activity {
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->openExternal("https://myaccount.google.com/apppasswords?authuser="+Uri.encode(account.getText().toString().trim())));
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
                 String secret=password.getText().toString(),from=account.getText().toString(),to=peer.getText().toString();password.setText("");dialog.dismiss();state("Connecting Gmail…");
-                worker.submit(()->{try{repo.connect(from,to,secret);event("connected",new JSONObject().put("connected",true).put("account",repo.account()).put("peer",repo.peer()));SyncJob.schedule(this);runOnUiThread(()->{if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);});refresh(true);}
+                worker.submit(()->{try{repo.connect(from,to,secret);event("connected",new JSONObject().put("connected",true).put("account",repo.account()).put("peer",repo.peer()));SyncJob.schedule(this);runOnUiThread(()->{if(ReplyNotifications.enabled(MainActivity.this)&&Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);});refresh(true);}
                     catch(Exception e){state("Gmail not connected");toast(MailRepository.friendly(e));}});
             });
         });dialog.show();
@@ -109,10 +114,15 @@ public final class MainActivity extends Activity {
         Uri uri=Uri.parse(url);if(!"https".equals(uri.getScheme())&&!"http".equals(uri.getScheme()))return;
         try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception e){toast("No browser is available to open this link.");}
     }
-    @Override protected void onResume(){super.onResume();active=true;handler.postDelayed(ticker,1000);}
-    @Override protected void onPause(){active=false;handler.removeCallbacks(ticker);super.onPause();}
+    @Override protected void onResume(){super.onResume();active=true;ReplyNotifications.foreground=true;getSystemService(NotificationManager.class).cancel(100);notificationState();handler.postDelayed(ticker,1000);}
+    @Override protected void onPause(){active=false;ReplyNotifications.foreground=false;handler.removeCallbacks(ticker);super.onPause();}
     @Override protected void onDestroy(){handler.removeCallbacks(ticker);worker.shutdown();storage.shutdown();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
     private final class Bridge {
+        @JavascriptInterface public void haptic(){runOnUiThread(()->web.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK));}
+        @JavascriptInterface public void notificationState(){runOnUiThread(()->MainActivity.this.notificationState());}
+        @JavascriptInterface public void setNotifications(boolean enabled){runOnUiThread(()->{ReplyNotifications.enabled(MainActivity.this,enabled);MainActivity.this.notificationState();if(enabled&&!ReplyNotifications.allowed(MainActivity.this)){if(ReplyNotifications.enabled(MainActivity.this)&&Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);else notificationSettings();}});}
+        @JavascriptInterface public void openNotificationSettings(){runOnUiThread(()->notificationSettings());}
+        @JavascriptInterface public void testNotification(){runOnUiThread(()->{ReplyNotifications.post(MainActivity.this,1,true);toast(ReplyNotifications.allowed(MainActivity.this)?"Test notification sent. Check your notification shade.":"Allow Instinct notifications in Android settings first.");});}
         @JavascriptInterface public void setTheme(String value){
             if(!"light".equals(value)&&!"dark".equals(value))return;
             runOnUiThread(()->{theme=value;getSharedPreferences("appearance",MODE_PRIVATE).edit().putString("theme",value).apply();applyAppearance();});

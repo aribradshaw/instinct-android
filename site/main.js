@@ -16,9 +16,9 @@ function render(){
   const summary=document.createElement('p');summary.textContent=release.summary;article.append(summary);
   const changes=document.createElement('ul');for(const change of release.notes){const li=document.createElement('li');li.textContent=change;changes.append(li);}article.append(changes);
   const source=resolveDevLogSourceMeta(release,{repositoryUrl,currentVersion:releases[0].version,buildCommit:BUILD_COMMIT});
-  const link=document.createElement('a');link.href=source.commit?.url||repositoryUrl+'/releases/tag/v'+release.version;link.textContent='View this release on GitHub ↗';article.append(link);list.append(article);
+  const link=document.createElement('a');link.href=source.commit?.url||repositoryUrl+'/releases/tag/v'+release.version;link.textContent='Source';article.append(link);list.append(article);
  }
- document.getElementById('resultCount').textContent=entries.length?entries.length+' release shown':'No matching releases. Try a different search.';
+ document.getElementById('resultCount').textContent=entries.length?entries.length+' release'+(entries.length===1?'':'s'):'No matching releases. Try a different search.';
  document.getElementById('version').textContent=releases[0].version;
 }
 document.getElementById('search').addEventListener('input',render);render();

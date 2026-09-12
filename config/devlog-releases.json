@@ -1,19 +1,13 @@
 [
   {
-    "version": "0.1.0",
+    "version": "1.0.1",
     "date": "2026-09-11",
-    "title": "A familiar conversation, a new connection",
-    "summary": "The first public Android companion for talking to Instinct through email. Your phone connects directly to Gmail, with a messaging interface and no relay server.",
+    "title": "First release",
+    "summary": "Android email chat with light and dark themes.",
     "notes": [
-      "Read your existing Instinct emails as chronological chat bubbles.",
-      "Send UTF-8 messages with the original email subject and reply headers.",
-      "Connect your own Gmail account and Instinct email address.",
-      "Keep credentials, messages, and drafts encrypted on the device with Android Keystore.",
-      "Preserve uncertain sends without automatically retrying, and reconcile them during sync.",
-      "Refresh while open and receive periodic background reply notifications.",
-      "Read original emails, open links and attachments in Gmail, and share text into the composer.",
-      "Open this public DevLog directly from the app's connection settings.",
-      "Switch between light and dark themes, with matching system bars and native dialogs."
+      "Send and receive through Gmail; keep history and drafts encrypted on your phone.",
+      "Elastic scrolling, tap feedback, and a button to jump to new replies.",
+      "Notification controls and instructions for muting Instinct emails in Gmail."
     ],
     "author": {
       "name": "Ari Bradshaw",
