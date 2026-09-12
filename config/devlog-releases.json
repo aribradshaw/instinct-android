@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.0.4",
+    "date": "2026-09-11",
+    "title": "Polish in-app notices and streamline README",
+    "summary": "Source update. See the linked commit for details.",
+    "notes": [
+      "Polish in-app notices and streamline README"
+    ],
+    "commit": "20ee669ee9f0f7ac87cc4e33125452219a1d6bdc",
+    "author": {
+      "name": "Ari Bradshaw",
+      "githubLogin": "aribradshaw"
+    }
+  },
+  {
     "version": "1.0.3",
     "date": "2026-09-11",
     "title": "Automatically version source updates and backfill the DevLog",
