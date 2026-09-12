@@ -1,4 +1,4 @@
-import { readFile, mkdir, copyFile } from 'node:fs/promises';
+import { readFile, mkdir, copyFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { validateDevLogEntries, assertDevLogReleaseAlignment } from '@aribradshaw/devlog';
 const releases = JSON.parse(await readFile('config/devlog-releases.json', 'utf8'));
@@ -8,8 +8,13 @@ assertDevLogReleaseAlignment({currentVersion:pkg.version,latestDevLogVersion:rel
 const android = await readFile('app/build.gradle','utf8');
 if (!android.includes(`versionName '${pkg.version}'`)) throw new Error('Android version must match the DevLog.');
 const appHtml = await readFile('app/src/main/assets/index.html','utf8');
-if (!appHtml.includes(` / ${pkg.version} / `)) throw new Error('Visible app version must match the DevLog.');
+const visibleVersion = appHtml.match(/class="version"[^>]*>[^<]*?\b(\d+\.\d+\.\d+)\b/)?.[1];
+if (visibleVersion !== pkg.version) throw new Error('Visible app version must match the DevLog.');
 await mkdir('site/dist', {recursive:true});
-for (const file of ['index.html', 'style.css']) await copyFile(`site/${file}`, `site/dist/${file}`);
+for (const file of ['index.html', 'devlog.html', 'style.css']) await copyFile(`site/${file}`, `site/dist/${file}`);
+for (const file of ['index.html', 'devlog.html']) {
+  const html = await readFile(`site/dist/${file}`, 'utf8');
+  await writeFile(`site/dist/${file}`, html.replace(/(<span id="version">)[^<]*/, `$1${pkg.version}`));
+}
 await build({ entryPoints:['site/main.js'],bundle:true,minify:true,format:'esm',outfile:'site/dist/main.js',define:{'BUILD_COMMIT':JSON.stringify(process.env.GITHUB_SHA||'')} });
 console.log(`Public DevLog built for ${pkg.version} using @aribradshaw/devlog.`);
