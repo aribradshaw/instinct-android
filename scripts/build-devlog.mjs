@@ -16,5 +16,5 @@ for (const file of ['index.html', 'devlog.html']) {
   const html = await readFile(`site/dist/${file}`, 'utf8');
   await writeFile(`site/dist/${file}`, html.replace(/(<span id="version">)[^<]*/, `$1${pkg.version}`));
 }
-await build({ entryPoints:['site/main.js'],bundle:true,minify:true,format:'esm',outfile:'site/dist/main.js',define:{'BUILD_COMMIT':JSON.stringify(process.env.GITHUB_SHA||'')} });
+await build({ entryPoints:['site/main.js'],bundle:true,minify:true,format:'esm',outfile:'site/dist/main.js',define:{'BUILD_COMMIT':JSON.stringify(process.env.BUILD_SOURCE_SHA||process.env.GITHUB_SHA||'')} });
 console.log(`Public DevLog built for ${pkg.version} using @aribradshaw/devlog.`);

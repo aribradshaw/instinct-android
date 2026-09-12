@@ -4,22 +4,43 @@ on:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Record source updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            npm ci
+            node scripts/record-devlog.mjs
+            npm run build:devlog
+            git add package.json package-lock.json config/devlog-releases.json config/devlog-state.json app/build.gradle app/src/main/assets/index.html app/src/main/assets/app.js
+            npm run check:public
+            if git diff --cached --quiet; then break; fi
+            git commit -m "chore(release): record source updates"
+            if git push origin HEAD:main; then break; fi
+            if [ "$attempt" = 5 ]; then exit 1; fi
+          done
+          echo "BUILD_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - run: npm run check:public
       - run: npm run build:devlog
       - uses: actions/configure-pages@v5
