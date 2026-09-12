@@ -42,7 +42,7 @@ final class Vault {
         return new String(cipher.doFinal(value, 12, value.length - 12), StandardCharsets.UTF_8);
     }
     synchronized void clear() {
-        for (String name : new String[]{"account.enc", "config.enc", "messages.enc", "draft.enc", "pending.enc"})
+        for (String name : new String[]{"account.enc", "config.enc", "messages.enc", "draft.enc", "pending.enc", "draft-files.enc", "reply.enc", "sync.enc"})
             new AtomicFile(new File(context.getFilesDir(), name)).delete();
     }
 }

@@ -22,6 +22,34 @@ final class MailRepository {
     synchronized String peer() throws Exception { return new JSONObject(vault.read("config.enc","{}")).optString("peer"); }
     synchronized String draft() throws Exception { return vault.read("draft.enc", ""); }
     synchronized void draft(String text) throws Exception { vault.write("draft.enc", text); }
+    synchronized JSONArray draftFiles() throws Exception { return new JSONArray(vault.read("draft-files.enc","[]")); }
+    synchronized JSONArray fileLabels() throws Exception {
+        JSONArray labels=new JSONArray(),files=draftFiles();for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);labels.put(new JSONObject().put("name",f.getString("name")).put("size",f.getInt("size")));}return labels;
+    }
+    synchronized void addFile(String name,String type,byte[] bytes)throws Exception {
+        JSONArray files=draftFiles();MailAttachment safe=new MailAttachment(name,type,bytes);
+        files.put(new JSONObject().put("name",safe.name).put("type",safe.type).put("size",bytes.length).put("data",Base64.getEncoder().encodeToString(bytes)));
+        MailAttachment.validate(decodeFiles(files));vault.write("draft-files.enc",files.toString());
+    }
+    private List<MailAttachment> decodeFiles(JSONArray files)throws Exception {
+        List<MailAttachment> result=new ArrayList<>();for(int i=0;i<files.length();i++){JSONObject f=files.getJSONObject(i);result.add(new MailAttachment(f.getString("name"),f.getString("type"),Base64.getDecoder().decode(f.getString("data"))));}return result;
+    }
+    synchronized void removeFile(int index)throws Exception {JSONArray files=draftFiles();if(index>=0&&index<files.length()){files.remove(index);vault.write("draft-files.enc",files.toString());}}
+    synchronized String replyId()throws Exception{return vault.read("reply.enc","");}
+    synchronized void replyId(String id)throws Exception {
+        if(!id.isEmpty()){boolean found=false;JSONArray history=cached();for(int i=0;i<history.length();i++){JSONObject m=history.getJSONObject(i);if(m.getString("id").equals(id)&&!m.optString("status").equals("failed")&&!m.optString("status").equals("unconfirmed"))found=true;}if(!found)throw new IllegalArgumentException("That message is not available to reply to.");}
+        vault.write("reply.enc",id);
+    }
+    synchronized boolean initialized()throws Exception{return syncState().optBoolean("initialized");}
+    synchronized JSONObject syncState()throws Exception{return new JSONObject(vault.read("sync.enc","{}"));}
+    synchronized void recover(String id)throws Exception {
+        JSONArray queue=new JSONArray(vault.read("pending.enc","[]"));
+        for(int i=0;i<queue.length();i++){JSONObject m=queue.getJSONObject(i);if(m.getString("id").equals(id)&&m.optString("status").equals("failed")){
+            String storedFiles=m.optJSONArray("files")==null?"[]":m.getJSONArray("files").toString();
+            if((!draft().isBlank()&&!draft().equals(m.getString("text")))||(draftFiles().length()>0&&!draftFiles().toString().equals(storedFiles)))throw new IllegalStateException("Clear or send your current draft before recovering a different failed message.");
+            vault.write("draft.enc",m.getString("text"));vault.write("draft-files.enc",m.optJSONArray("files")==null?"[]":m.getJSONArray("files").toString());vault.write("reply.enc",m.optString("replyId"));return;
+        }}throw new IllegalArgumentException("Only definitely failed messages can be recovered. Check Gmail for unconfirmed sends.");
+    }
     synchronized void disconnect() { vault.clear(); }
     private Properties properties() {
         Properties p = new Properties();
@@ -51,7 +79,7 @@ final class MailRepository {
     synchronized JSONArray cached() throws Exception {
         JSONArray result = new JSONArray(vault.read("messages.enc", "[]"));
         JSONArray pending = new JSONArray(vault.read("pending.enc", "[]"));
-        for (int i = 0; i < pending.length(); i++) result.put(pending.getJSONObject(i));
+        for (int i = 0; i < pending.length(); i++) {JSONObject item=pending.getJSONObject(i);item.remove("files");result.put(item);}
         return sorted(result);
     }
     static JSONArray sorted(JSONArray data) throws JSONException {
@@ -94,7 +122,8 @@ final class MailRepository {
             for(int i=0;i<multi.getCount();i++) attachments(multi.getBodyPart(i),target,depth+1);
         }
     }
-    synchronized JSONArray sync() throws Exception {
+    synchronized JSONArray sync() throws Exception {return sync(false);}
+    synchronized JSONArray sync(boolean older) throws Exception {
         String ACCOUNT=account(),PEER=peer();
         String password = vault.read("account.enc", "");
         if (password.isEmpty()) return cached();
@@ -112,11 +141,20 @@ final class MailRepository {
             all.open(Folder.READ_ONLY);
             SearchTerm peers = new OrTerm(new FromTerm(new InternetAddress(PEER)),new RecipientTerm(Message.RecipientType.TO,new InternetAddress(PEER)));
             Message[] messages=all.search(peers);
-            int start=Math.max(0,messages.length-200);
-            Message[] recent=Arrays.copyOfRange(messages,start,messages.length);
+            FetchProfile uids=new FetchProfile();uids.add(UIDFolder.FetchProfileItem.UID);all.fetch(messages,uids);
+            IMAPFolder imap=(IMAPFolder)all;long validity=imap.getUIDValidity();JSONObject cursor=syncState();
+            boolean same=cursor.optLong("validity")==validity;
+            long newest=same?cursor.optLong("newest"):0,oldest=same?cursor.optLong("oldest",Long.MAX_VALUE):Long.MAX_VALUE;
+            List<Message> candidates=new ArrayList<>();
+            for(Message m:messages){long uid=imap.getUID(m);if(older?uid<oldest:uid>newest)candidates.add(m);}
+            // Initial/older pages start at the end. Subsequent syncs consume every new UID in order.
+            int start=older||newest==0?Math.max(0,candidates.size()-200):0;
+            int end=Math.min(candidates.size(),start+200);
+            Message[] recent=candidates.subList(start,end).toArray(new Message[0]);
             FetchProfile profile=new FetchProfile(); profile.add(FetchProfile.Item.ENVELOPE); profile.add("Message-ID"); profile.add("References");
             all.fetch(recent,profile);
             for(Message msg:recent) {
+                long uid=imap.getUID(msg);newest=Math.max(newest,uid);oldest=Math.min(oldest,uid);
                 boolean outgoing=contains(msg.getFrom(),ACCOUNT)&&contains(msg.getRecipients(Message.RecipientType.TO),PEER);
                 boolean incoming=contains(msg.getFrom(),PEER)&&contains(msg.getAllRecipients(),ACCOUNT);
                 if(!incoming&&!outgoing) continue;
@@ -128,6 +166,11 @@ final class MailRepository {
                 map.put(id,new JSONObject().put("id",id).put("outgoing",outgoing).put("text",MailText.conversational(raw)).put("raw",raw)
                     .put("time",date!=null?date.getTime():System.currentTimeMillis()).put("subject",msg.getSubject()).put("attachments",files).put("status",outgoing?"sent":"received"));
             }
+            cursor.put("initialized",true).put("validity",validity).put("newest",newest).put("oldest",oldest)
+                .put("hasOlder",messages.length>0&&imap.getUID(messages[0])<oldest).put("lastChecked",System.currentTimeMillis());
+            // Persist message data before advancing the cursor so an interrupted sync can safely repeat.
+            JSONArray saved=new JSONArray();for(JSONObject value:map.values())saved.put(value);vault.write("messages.enc",sorted(saved).toString());
+            vault.write("sync.enc",cursor.toString());
             all.close(false);
         }
         JSONArray pending=new JSONArray(vault.read("pending.enc","[]")), keep=new JSONArray();
@@ -138,21 +181,24 @@ final class MailRepository {
     }
     synchronized void send(String text) throws Exception {
         String ACCOUNT=account(),PEER=peer();
-        if(text.isBlank()||text.length()>30000) throw new IllegalArgumentException("Write a message of up to 30,000 characters.");
+        JSONArray files=draftFiles();List<MailAttachment> attachments=decodeFiles(files);
+        if((text.isBlank()&&files.length()==0)||text.length()>30000) throw new IllegalArgumentException("Add a message or attachment. Text can be up to 30,000 characters.");
         String password=vault.read("account.enc",""); if(password.isEmpty()) throw new IllegalStateException("Connect Gmail first.");
         Session session=Session.getInstance(properties());
         JSONArray history=cached(); JSONObject reply=null;
-        for(int i=history.length()-1;i>=0;i--) { JSONObject item=history.getJSONObject(i); if(item.optString("status").equals("received")) { reply=item; break; } }
+        String selected=replyId();
+        for(int i=history.length()-1;i>=0;i--) { JSONObject item=history.getJSONObject(i); if(selected.isEmpty()?item.optString("status").equals("received"):item.getString("id").equals(selected)) { reply=item; break; } }
         String subject=reply!=null?reply.optString("subject",SUBJECT):SUBJECT;
-        MimeMessage msg=OutboundMail.create(session,text,ACCOUNT,PEER,subject,reply!=null?reply.getString("id"):null);
+        MimeMessage msg=OutboundMail.create(session,text,ACCOUNT,PEER,subject,reply!=null?reply.getString("id"):null,attachments);
+        JSONArray names=new JSONArray();for(MailAttachment file:attachments)names.put(file.name);
         JSONObject pending=new JSONObject().put("id",msg.getMessageID()).put("outgoing",true).put("text",text).put("raw",text)
-            .put("time",System.currentTimeMillis()).put("subject",msg.getSubject()).put("status","unconfirmed").put("attachments",new JSONArray());
+            .put("time",System.currentTimeMillis()).put("subject",msg.getSubject()).put("status","unconfirmed").put("attachments",names).put("files",files).put("replyId",selected);
         JSONArray queue=new JSONArray(vault.read("pending.enc","[]")); queue.put(pending); vault.write("pending.enc",queue.toString());
         boolean submitted=false;
         try (Transport transport=session.getTransport("smtps")) {
             transport.connect("smtp.gmail.com",465,ACCOUNT,password);
             submitted=true; transport.sendMessage(msg,msg.getAllRecipients());
-            pending.put("status","sent"); vault.write("pending.enc",queue.toString()); vault.write("draft.enc","");
+            pending.put("status","sent");pending.remove("files");vault.write("pending.enc",queue.toString());vault.write("draft.enc","");vault.write("draft-files.enc","[]");vault.write("reply.enc","");
         } catch(Exception e) {
             if(pending.optString("status").equals("sent")) return;
             // A disconnect after SMTP DATA can still mean delivery. Never automatically resend.

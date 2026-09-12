@@ -28,8 +28,9 @@ public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final AtomicBoolean syncing=new AtomicBoolean(false),sending=new AtomicBoolean(false);
     private boolean active=false,loaded=false;
+    private boolean picking=false;
     private static final String ORIGIN="https://app.instinct.local/";
-    private final Runnable ticker=new Runnable(){ public void run(){ if(active){ refresh(false); handler.postDelayed(this,15000); } } };
+    private final Runnable ticker=new Runnable(){ public void run(){ if(active){ refresh(false); handler.postDelayed(this,foregroundSeconds()*1000L); } } };
 
     @Override public void onCreate(Bundle b) {
         theme=getSharedPreferences("appearance",MODE_PRIVATE).getString("theme",null);
@@ -72,22 +73,58 @@ public final class MainActivity extends Activity {
         WindowInsetsController controller=getWindow().getInsetsController();
         if(controller!=null){int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;controller.setSystemBarsAppearance(light?mask:0,mask);}
     }
+    private SharedPreferences appearancePreferences(){return getSharedPreferences("appearance",MODE_PRIVATE);}
+    private SharedPreferences syncPreferences(){return getSharedPreferences("sync",MODE_PRIVATE);}
+    private int foregroundSeconds(){return Math.max(5,Math.min(300,syncPreferences().getInt("foregroundSeconds",15)));}
+    private void cadenceState(){try{event("cadence",new JSONObject().put("foregroundSeconds",foregroundSeconds()).put("backgroundMinutes",SyncJob.backgroundMinutes(this)));}catch(JSONException ignored){}}
+    private String accent(){return appearancePreferences().getString("accent","default");}
+    private String accentColor(){String saved=accent();if("system".equals(saved)&&Build.VERSION.SDK_INT>=31)return String.format("#%06X",0xFFFFFF&getColor(android.R.color.system_accent1_500));return "#D6F576";}
+    private void appearanceState(){try{event("appearance",new JSONObject().put("accent",accent()).put("color",accentColor()));}catch(JSONException ignored){}}
     private WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",403,"Blocked",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     private void event(String type,JSONObject data){ runOnUiThread(()->{ if(!isFinishing()&&loaded) web.evaluateJavascript("window.receive("+JSONObject.quote(type)+","+data+")",null); }); }
     private JSONObject object(String key,Object value){JSONObject o=new JSONObject();try{o.put(key,value);}catch(Exception ignored){}return o;}
     private void toast(String message){event("notice",object("message",message));}
     private void state(String label){event("status",object("label",label));}
-    private void publish() throws Exception { event("messages",object("messages",repo.cached())); }
+    private void publish() throws Exception { event("messages",object("messages",repo.cached()));event("health",repo.syncState()); }
+    private void composeState()throws Exception {event("compose",new JSONObject().put("files",repo.fileLabels()).put("replyId",repo.replyId()));}
     private void initial(){worker.submit(()->{try {
         JSONObject init=new JSONObject().put("connected",repo.connected()).put("account",repo.account()).put("peer",repo.peer()).put("draft",repo.draft()).put("messages",repo.cached());
         if(Intent.ACTION_SEND.equals(getIntent().getAction())) {String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT); if(shared!=null) init.put("draft",shared);}
-        event("init",init);notificationState();if(repo.connected()){SyncJob.schedule(this);refresh(false);}
+        event("init",init);composeState();event("health",repo.syncState());notificationState();cadenceState();appearanceState();if(repo.connected()){SyncJob.schedule(this);refresh(false);}
     }catch(Exception e){toast("Could not read encrypted storage. Reconnect Gmail in settings.");}});}
     private void refresh(boolean manual){
         if(!loaded||!syncing.compareAndSet(false,true))return;
         event("sync",object("busy",true));
-        worker.submit(()->{try{if(repo.connected()){if(manual)state("Refreshing…");repo.sync();publish();state("Up to date");if(manual)toast("Conversation is up to date.");}}
-        catch(Exception e){state("Offline · cached messages");if(manual)toast(MailRepository.friendly(e));}finally{syncing.set(false);event("sync",object("busy",false));}});
+        worker.submit(()->{try{if(repo.connected()){if(manual)state("Refreshing…");repo.sync();publish();event("status",object("label",""));}}
+        catch(Exception e){state(e instanceof jakarta.mail.AuthenticationFailedException?"Reconnect Gmail": "Connection interrupted · cached messages");if(manual)toast(MailRepository.friendly(e));}finally{syncing.set(false);event("sync",object("busy",false));}});
+    }
+    private void pickAttachment(){
+        if(sending.get()||picking)return;
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+        try{picking=true;startActivityForResult(intent,20);}catch(ActivityNotFoundException e){picking=false;toast("No file picker is available.");}
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request==21&&result==RESULT_OK&&data!=null){java.util.ArrayList<String> words=data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);if(words!=null&&!words.isEmpty())event("dictation",object("text",words.get(0)));return;}
+        if(request!=20)return;picking=false;if(result!=RESULT_OK||data==null)return;
+        java.util.List<Uri> uris=new java.util.ArrayList<>();
+        if(data.getClipData()!=null){for(int i=0;i<Math.min(data.getClipData().getItemCount(),MailAttachment.MAX_FILES+1);i++)uris.add(data.getClipData().getItemAt(i).getUri());}
+        else if(data.getData()!=null)uris.add(data.getData());
+        event("fileBusy",object("busy",true));
+        worker.submit(()->{try{
+            for(Uri uri:uris){
+                if(!"content".equals(uri.getScheme()))throw new IllegalArgumentException("Choose a file from the Android file picker.");
+                String name="attachment";
+                try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())name=cursor.getString(0);}
+                try(InputStream input=getContentResolver().openInputStream(uri);ByteArrayOutputStream output=new ByteArrayOutputStream()){
+                    if(input==null)throw new IOException("File unavailable");byte[] buffer=new byte[8192];int count;
+                    while((count=input.read(buffer))!=-1){if(output.size()+count>MailAttachment.MAX_BYTES)throw new IllegalArgumentException("Attachments must total 12 MB or less.");output.write(buffer,0,count);}
+                    repo.addFile(name==null?"attachment":name,getContentResolver().getType(uri),output.toByteArray());
+                }
+            }
+        }catch(Exception e){toast(e instanceof IllegalArgumentException?e.getMessage():"Could not attach that file. Download it to your phone and try again.");}
+        finally{try{composeState();}catch(Exception ignored){}event("fileBusy",object("busy",false));}});
     }
     private void notificationState(){try{event("notifications",new JSONObject().put("enabled",ReplyNotifications.enabled(this)).put("allowed",ReplyNotifications.allowed(this)));}catch(JSONException ignored){}}
     private void notificationSettings(){try{startActivity(new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID,ReplyNotifications.CHANNEL));}catch(ActivityNotFoundException e){startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}}
@@ -104,7 +141,11 @@ public final class MainActivity extends Activity {
             dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->openExternal("https://myaccount.google.com/apppasswords?authuser="+Uri.encode(account.getText().toString().trim())));
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-                String secret=password.getText().toString(),from=account.getText().toString(),to=peer.getText().toString();password.setText("");dialog.dismiss();state("Connecting Gmail…");
+                String secret=password.getText().toString(),from=account.getText().toString(),to=peer.getText().toString();
+                if(!from.trim().toLowerCase(java.util.Locale.ROOT).endsWith("@gmail.com")){account.setError("Use your personal Gmail address.");return;}
+                if(!to.trim().toLowerCase(java.util.Locale.ROOT).endsWith("@mail.instinct.com")){peer.setError("Use the exact @mail.instinct.com address Instinct gave you.");return;}
+                if(!secret.replaceAll("\\s","").matches("[a-zA-Z]{16}")){password.setError("Use a 16-letter Google app password.");return;}
+                password.setText("");dialog.dismiss();state("Connecting Gmail…");
                 worker.submit(()->{try{repo.connect(from,to,secret);event("connected",new JSONObject().put("connected",true).put("account",repo.account()).put("peer",repo.peer()));SyncJob.schedule(this);runOnUiThread(()->{if(ReplyNotifications.enabled(MainActivity.this)&&Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);});refresh(true);}
                     catch(Exception e){state("Gmail not connected");toast(MailRepository.friendly(e));}});
             });
@@ -114,7 +155,7 @@ public final class MainActivity extends Activity {
         Uri uri=Uri.parse(url);if(!"https".equals(uri.getScheme())&&!"http".equals(uri.getScheme()))return;
         try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception e){toast("No browser is available to open this link.");}
     }
-    @Override protected void onResume(){super.onResume();active=true;ReplyNotifications.foreground=true;getSystemService(NotificationManager.class).cancel(100);notificationState();handler.postDelayed(ticker,1000);}
+    @Override protected void onResume(){super.onResume();active=true;ReplyNotifications.foreground=true;getSystemService(NotificationManager.class).cancel(100);notificationState();cadenceState();appearanceState();handler.postDelayed(ticker,1000);}
     @Override protected void onPause(){active=false;ReplyNotifications.foreground=false;handler.removeCallbacks(ticker);super.onPause();}
     @Override protected void onDestroy(){handler.removeCallbacks(ticker);worker.shutdown();storage.shutdown();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
     private final class Bridge {
@@ -127,13 +168,28 @@ public final class MainActivity extends Activity {
             if(!"light".equals(value)&&!"dark".equals(value))return;
             runOnUiThread(()->{theme=value;getSharedPreferences("appearance",MODE_PRIVATE).edit().putString("theme",value).apply();applyAppearance();});
         }
+        @JavascriptInterface public void setCadence(String mode,int value){
+            if((!"foreground".equals(mode)&&!"background".equals(mode))||value<5)return;
+            runOnUiThread(()->{if("foreground".equals(mode)){if(value>300)return;syncPreferences().edit().putInt("foregroundSeconds",value).apply();handler.removeCallbacks(ticker);if(active)handler.postDelayed(ticker,value*1000L);}else{if(value<15||value>1440)return;syncPreferences().edit().putInt("backgroundMinutes",value).apply();SyncJob.schedule(MainActivity.this);}cadenceState();});
+        }
+        @JavascriptInterface public void setAccent(String value){
+            if(!"default".equals(value)&&!"system".equals(value)&&!value.matches("#[0-9A-Fa-f]{6}"))return;
+            runOnUiThread(()->{appearancePreferences().edit().putString("accent",value).apply();appearanceState();});
+        }
         @JavascriptInterface public void connect(){runOnUiThread(()->connectDialog());}
         @JavascriptInterface public void refresh(){runOnUiThread(()->MainActivity.this.refresh(true));}
-        @JavascriptInterface public void saveDraft(String value){if(value.length()<=30000)storage.submit(()->{try{repo.draft(value);}catch(Exception e){toast("Draft could not be saved.");}});}
+        @JavascriptInterface public void attach(){runOnUiThread(()->pickAttachment());}
+        @JavascriptInterface public void removeAttachment(int index){if(sending.get())return;worker.submit(()->{try{repo.removeFile(index);composeState();}catch(Exception e){toast("Could not remove attachment.");}});}
+        @JavascriptInterface public void reply(String id){if(sending.get())return;worker.submit(()->{try{repo.replyId(id);composeState();}catch(Exception e){toast(MailRepository.friendly(e));}});}
+        @JavascriptInterface public void recover(String id){if(sending.get())return;worker.submit(()->{try{repo.recover(id);event("draft",object("text",repo.draft()));composeState();toast("Recovered for editing. Tap Send when ready.");}catch(Exception e){toast(MailRepository.friendly(e));}});}
+        @JavascriptInterface public void copy(String text){runOnUiThread(()->{getSystemService(android.content.ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Instinct message",text));toast("Copied message.");});}
+        @JavascriptInterface public void dictate(){runOnUiThread(()->{try{startActivityForResult(new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT,"Dictate a draft for Instinct"),21);}catch(ActivityNotFoundException e){toast("Use the microphone on your keyboard to dictate a message.");}});}
+        @JavascriptInterface public void loadOlder(){if(!syncing.compareAndSet(false,true))return;event("sync",object("busy",true));worker.submit(()->{try{repo.sync(true);publish();}catch(Exception e){toast(MailRepository.friendly(e));}finally{syncing.set(false);event("sync",object("busy",false));}});}
+        @JavascriptInterface public void saveDraft(String value){if(value.length()<=30000)worker.submit(()->{try{repo.draft(value);}catch(Exception e){toast("Draft could not be saved.");}});}
         @JavascriptInterface public void send(String text){
             if(!sending.compareAndSet(false,true))return;
             state("Sending via Gmail…");
-            worker.submit(()->{try{repo.send(text);publish();event("sent",new JSONObject());state("Sent via Gmail");}
+            worker.submit(()->{try{repo.send(text);publish();event("sent",new JSONObject());composeState();state("Sent via Gmail · awaiting reply");}
                 catch(Exception e){try{publish();}catch(Exception ignored){}event("sendError",object("message","Send was not confirmed. Check the message status and Gmail before sending again. Nothing is retried automatically."));state("Check send status");}
                 finally{sending.set(false);}});
         }

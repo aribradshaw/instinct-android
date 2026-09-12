@@ -11,7 +11,10 @@ An unofficial, open-source Android app that turns your Instinct email conversati
 ## What it does
 
 - Displays incoming and sent Instinct emails as selectable chat bubbles in a dark olive and lime interface.
-- Sends plain-text messages from your own Gmail account, preserving the subject and reply headers.
+- Sends text and standard email attachments from your Gmail account, preserving the subject and reply headers. Use the paperclip beside the composer for up to 8 files totaling 12 MB. Selected files stay encrypted on the phone until removed or sent.
+- Search saved messages from Settings, copy message text, select a message to reply to, and load older history. Fenced code blocks display as readable code.
+- Dictate editable text with the microphone beside the composer. Android's chosen speech service handles recognition; nothing sends until you tap Send.
+- Definite failures offer Edit and resend. Unconfirmed submissions offer Check in Gmail and never automatically retry.
 - Saves drafts, conversation history, pending sends, and credentials encrypted on the phone.
 - Shows explicit sent, failed, and unconfirmed states. It never automatically retries an uncertain send.
 - Refreshes every 15 seconds while open and schedules periodic background reply notifications.
@@ -23,7 +26,7 @@ An unofficial, open-source Android app that turns your Instinct email conversati
 
 ## Install
 
-1. Download `instinct-companion-1.0.1.apk` from [Releases](https://github.com/aribradshaw/instinct-android/releases/latest).
+1. Download `instinct-companion-1.0.2.apk` from [Releases](https://github.com/aribradshaw/instinct-android/releases/latest).
 2. Open it on an Android 11 or newer phone. Allow installation from the browser or file manager if Android asks.
 3. Open **Instinct** and connect your account below.
 
@@ -50,10 +53,10 @@ Android Keystore protects AES-GCM encrypted account configuration, password, mes
 
 ## Current limits
 
-- Text composition only. Incoming attachment names open Gmail; file uploads and voice notes are not implemented.
+- Incoming attachment names open Gmail. Outgoing files use standard MIME attachments, with a conservative 12 MB total limit to allow for encoding overhead. There is no automatic Drive upload. Instinct's ability to interpret each file format still needs confirmation through a real reply.
 - Background checks run about every 15 minutes and can take longer under Android battery restrictions. This is periodic email sync, not instant push.
 - Notification detection compares message identities, so a new reply with an older sender timestamp still qualifies. Initial history import stays quiet, and foreground reading does not produce duplicate app alerts.
-- Each sync reads up to 200 latest matching messages and retains previously cached history.
+- Initial sync loads up to 200 recent matching messages. Later syncs advance a saved UID cursor in batches, so a larger backlog catches up over successive checks. Load older messages retrieves earlier pages. Search covers downloaded history.
 - Gmail All Mail must be available through IMAP. This is normally available by default; check Gmail label settings if you encounter an error.
 - The app does not mark messages read, change labels, delete emails, or send messages automatically.
 - The UI is bundled HTML/CSS in a native Android WebView, with native account setup, mail transport, encrypted storage, and background jobs.
@@ -95,10 +98,16 @@ To publish an update, edit `config/devlog-releases.json` and align the version i
 
 ## Verification
 
-Eight unit tests cover quoted-history trimming, exact address comparisons, recipient identity, reply threading, UTF-8 MIME round trips, unique Message-IDs, and header-injection rejection. Android build and lint are included in CI. The initial version was installed on a physical Android 16 device; private Gmail authentication, incoming history, and a user-initiated outgoing message were observed. No build or test sends email.
+Unit tests cover quoted-history trimming, exact addresses, reply threading, UTF-8 MIME round trips, attachment byte preservation and limits, unique Message-IDs, header-injection rejection, and reply identity detection. Android build and lint are included in CI. The initial version was installed on a physical Android 16 device; private Gmail authentication, incoming history, and a user-initiated outgoing message were observed. Version 1.0.2 adds browser interaction checks with synthetic messages. Overnight battery/reboot behavior, interrupted SMTP recovery, and Instinct interpreting real attachments remain device acceptance checks. No build or automated test sends email.
+
+### Before broader distribution
+
+Google sign-in remains planned, not enabled. It requires an owned Google Cloud project, Android OAuth registration for the release package/certificate, a consent screen, and Google's verification for Gmail read access. The intended API permissions are Gmail read-only plus send, without modify/delete access. Read-only still grants mailbox-wide reading, not a single-sender restriction. See [Google's scope reference](https://developers.google.com/workspace/gmail/api/auth/scopes). The current app-password connection is available now.
+
+Release acceptance: install over the previous signed version, verify drafts survive closing/reopening, attach a harmless text/PDF/image sample and ask Instinct to describe it, confirm the returned contents, then test notifications after overnight idle and reboot. Check failed and uncertain submissions against Gmail before resending. Have a new tester complete onboarding without assistance.
 
 ## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Contributions are welcome, especially OAuth account connection, attachment composition, and improved background delivery.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Contributions are welcome, especially OAuth account connection and improved background delivery.
 
 [MIT](LICENSE), copyright 2026 Ari Bradshaw. MIT permits reuse, modification, and redistribution with attribution and the license notice. Dependencies retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

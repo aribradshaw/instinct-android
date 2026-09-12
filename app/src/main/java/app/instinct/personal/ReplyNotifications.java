@@ -21,8 +21,7 @@ final class ReplyNotifications {
         c.getSystemService(NotificationManager.class).notify(test?102:100,n);
     }
     static int newReplies(JSONArray old,JSONArray now)throws JSONException{
-        // Compare identities, not sender clocks. Initial history import stays quiet.
-        if(old.length()==0)return 0;
+        // Initial import suppression belongs to the persisted sync state, not history length.
         Set<String> known=new HashSet<>();for(int i=0;i<old.length();i++)known.add(old.getJSONObject(i).getString("id"));
         int count=0;for(int i=0;i<now.length();i++){JSONObject m=now.getJSONObject(i);if(!m.optBoolean("outgoing")&&!known.contains(m.getString("id")))count++;}return count;
     }

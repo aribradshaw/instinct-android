@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.2",
+    "date": "2026-09-11",
+    "title": "Attachments and everyday reliability",
+    "summary": "Send files, find past messages, and recover failed sends.",
+    "notes": [
+      "Attach up to 8 files totaling 12 MB, with encrypted attachment drafts and removable file chips.",
+      "Search saved messages, copy text, reply to a selected message, and dictate an editable draft.",
+      "Load older history and catch up new messages using a saved sync cursor.",
+      "Fix first-reply alerts after an empty initial sync and show when messages were last checked.",
+      "Recover definite failures for editing; uncertain sends keep their Gmail check action.",
+      "Tap the lightning logo to refresh, or hold it for an animated hint."
+    ],
+    "author": {"name":"Ari Bradshaw","githubLogin":"aribradshaw"}
+  },
+  {
     "version": "1.0.1",
     "date": "2026-09-11",
     "title": "First release",
