@@ -37,9 +37,12 @@ function render(data){
   if(old&&old.dataset.signature===signature){desired.push(old);continue;}
   const row=document.createElement('article');row.dataset.key=key;row.dataset.signature=signature;row.className='message'+(message.outgoing?' outgoing':'')+(!first&&!previousIds.has(message.id)?' arriving':'');
   if(!message.outgoing){const who=document.createElement('div');who.className='who';who.textContent='↗  INSTINCT';row.append(who);}
-  const bubble=document.createElement('div');bubble.className='bubble';addMessageText(bubble,message.text||'(Attachment)');
+  const vault=!message.outgoing?VaultCards.extract(message.text||''):{text:message.text||'',urls:[]};
+  const bubble=document.createElement('div');bubble.className='bubble';if(vault.text||!vault.urls.length)addMessageText(bubble,vault.text||'(Attachment)');
   for(const attachment of message.attachments||[]){const button=document.createElement('button');button.className='attachment';button.textContent='↗ '+attachment+' · Open in Gmail';button.onclick=()=>native('openGmail');bubble.append(button);}
-  row.append(bubble);const meta=document.createElement('div');meta.className='meta';const time=document.createElement('span');
+  if(bubble.childNodes.length)row.append(bubble);
+  for(const url of vault.urls)row.append(VaultCards.card(url,url=>native('openUrl',url)));
+  const meta=document.createElement('div');meta.className='meta';const time=document.createElement('span');
   time.textContent=date.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});meta.append(time);
   if(message.outgoing){const state=document.createElement('span');state.textContent=message.status==='sent'?'✓ Sent via Gmail':message.status==='failed'?'Not sent':'Unconfirmed · check Gmail';if(message.status!=='sent')state.className='state-warning';meta.append(state);}
   if(message.raw){const original=document.createElement('button');original.textContent='Original';original.onclick=()=>{$('originalBody').textContent=message.raw;openSheet('original');};meta.append(original);}
