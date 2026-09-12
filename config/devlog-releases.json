@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.0.3",
+    "date": "2026-09-11",
+    "title": "Automatically version source updates and backfill the DevLog",
+    "summary": "Source update. See the linked commit for details.",
+    "notes": [
+      "Automatically version source updates and backfill the DevLog"
+    ],
+    "commit": "6e0177e4cf9a7411a7a92ce1698b10a30180333e",
+    "author": {
+      "name": "Ari Bradshaw",
+      "githubLogin": "aribradshaw"
+    }
+  },
+  {
     "version": "1.0.2",
     "date": "2026-09-11",
     "title": "Attachments and everyday reliability",
