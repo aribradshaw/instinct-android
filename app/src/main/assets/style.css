@@ -29,6 +29,7 @@ body.connected #status i{background:var(--accent-text)}
 [aria-checked=true] .switch-track{background:var(--lime)}
 [aria-checked=true] .switch-track:after{transform:translateX(18px);background:var(--ink)}
 .notification-guide{margin-top:16px}.notification-guide h3{margin-top:0}.notification-guide ol{padding-left:20px;font-size:12px;line-height:1.8;color:var(--muted)}.notification-guide li{margin:12px 0}.notification-guide strong{color:var(--text)}#filterPeer{overflow-wrap:anywhere;color:var(--text)}
+.channel-picker{display:flex;align-items:center;gap:6px;padding:0 4px 8px}.channel-picker button{padding:6px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:10px;letter-spacing:.35px}.channel-picker button.selected{border-color:var(--accent-line);background:var(--accent-surface);color:var(--accent-text)}.channel-picker span{margin-left:auto;color:var(--muted);font-size:9px}.channel-tag{color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
 @media(prefers-reduced-motion:no-preference){
  html,body,header,footer,.bubble,.compose-box,dialog,.icon,.channel{transition:background-color .22s ease,color .22s ease,border-color .22s ease}
  button{transition:transform .17s cubic-bezier(.2,.8,.2,1),opacity .17s,background-color .2s}

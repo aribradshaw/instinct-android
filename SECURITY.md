@@ -6,6 +6,8 @@ The app stores its account configuration, Google app password, cache, pending se
 
 The application connects only to Gmail's IMAP and SMTP servers using TLS with hostname checks. The local UI loads bundled assets only. Remote email HTML is converted to text, scripts are blocked, and links open in the external browser after a tap. No telemetry, analytics, remote fonts, or relay service are included.
 
+The optional WhatsApp bridge uses Android's notification-listener and inline-reply APIs. Granting notification access allows Android to expose notifications from other apps, but this implementation ignores everything except an exact configured chat title from the official WhatsApp package. Matching message text is encrypted locally. It never asks for WhatsApp credentials, reads WhatsApp storage, or implements the WhatsApp protocol.
+
 Google app passwords allow broader mail access than this single-conversation UI. Revoke the password in Google Account settings if you lose the device or stop using the app. Disconnecting in the app deletes local data but does not revoke the password in Google.
 
 Release APKs are non-debuggable and signed by the maintainer. GitHub Actions debug artifacts are for development and are not the published release APK. Keep signing keys private; custom builds use a different signature and may require uninstalling an existing build.

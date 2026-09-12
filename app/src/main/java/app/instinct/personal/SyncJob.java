@@ -24,7 +24,7 @@ public final class SyncJob extends JobService {
                 MailRepository repo=MailRepository.get(this);
                 if(repo.connected()) {
                     synchronized(repo){boolean initialized=repo.initialized();JSONArray old=repo.cached(),now=repo.sync();int count=initialized?ReplyNotifications.newReplies(old,now):0;
-                        if(count>0) ReplyNotifications.post(this,count,false);}
+                        if(count>0) ReplyNotifications.post(this,count,false,ReplyNotifications.latestNewReply(old,now),"Gmail");}
                 }
             } catch(Exception e) { retry=true; }
             jobFinished(p,retry);

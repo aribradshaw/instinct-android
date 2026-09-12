@@ -45,4 +45,5 @@ final class Vault {
         for (String name : new String[]{"account.enc", "config.enc", "messages.enc", "draft.enc", "pending.enc", "draft-files.enc", "reply.enc", "sync.enc"})
             new AtomicFile(new File(context.getFilesDir(), name)).delete();
     }
+    synchronized void delete(String name) { new AtomicFile(new File(context.getFilesDir(), name)).delete(); }
 }

@@ -14,6 +14,7 @@ A focused Android inbox for your Instinct email conversation, powered directly b
 - Reply alerts, configurable foreground and background checks, appearance choices, and a Gmail guide for preventing duplicate Gmail notifications.
 - Clear delivered, failed, and unconfirmed send states. Unconfirmed email is never retried automatically.
 - Local-only encrypted account settings, message cache, drafts, and pending sends.
+- An optional focused WhatsApp bridge that mirrors only the exact Instinct chat name you configure and sends replies through WhatsApp's official Android notification action.
 
 ## Install
 
@@ -37,6 +38,8 @@ Use an app password, never your regular Google password. App passwords require 2
 Instinct connects directly to Gmail IMAP and SMTP over TLS. It has no relay server, trackers, remote email images, cloud backup, or device transfer. Android Keystore encrypts the local connection details and cache. Disconnect clears app data. Revoke the app password in your Google Account when you are done.
 
 This is periodic Gmail sync, not instant push. While the app is open it checks as often as every 15 seconds. Background checks run about every 15 minutes and Android battery controls may delay them. The app cannot modify Gmail notifications, labels, or read status.
+
+The WhatsApp bridge requires Android notification access, which lets Android expose notifications from every app to Instinct. The code discards notifications unless they come from the official WhatsApp or WhatsApp Business package and exactly match the configured chat name. It stores matching text locally with encryption. WhatsApp remains the transport and source of truth. The bridge cannot import old chat history, send attachments, confirm delivery, or send when WhatsApp has not supplied a live inline-reply action. In that case, use **Open Instinct in WhatsApp** once and wait for the next reply. No unofficial WhatsApp login or protocol is used.
 
 ## Build
 

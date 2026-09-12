@@ -23,6 +23,7 @@ public final class MainActivity extends Activity {
     private FrameLayout root;
     private String theme;
     private MailRepository repo;
+    private WhatsAppRepository whatsApp;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService storage=Executors.newSingleThreadExecutor();
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -30,13 +31,17 @@ public final class MainActivity extends Activity {
     private boolean active=false,loaded=false;
     private boolean picking=false;
     private static final String ORIGIN="https://app.instinct.local/";
+    private final BroadcastReceiver whatsAppUpdates=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){worker.submit(()->{try{publish();whatsAppState();}catch(Exception ignored){}});}};
     private final Runnable ticker=new Runnable(){ public void run(){ if(active){ refresh(false); handler.postDelayed(this,foregroundSeconds()*1000L); } } };
 
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(Bundle b) {
         theme=getSharedPreferences("appearance",MODE_PRIVATE).getString("theme",null);
         if(theme==null) theme=(getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES?"dark":"light";
         setTheme("light".equals(theme)?R.style.AppTheme_Light:R.style.AppTheme);
-        super.onCreate(b); repo=MailRepository.get(this);
+        super.onCreate(b); repo=MailRepository.get(this);whatsApp=new WhatsAppRepository(this);
+        IntentFilter whatsappFilter=new IntentFilter(WhatsAppNotificationService.UPDATED);
+        if(Build.VERSION.SDK_INT>=33)registerReceiver(whatsAppUpdates,whatsappFilter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(whatsAppUpdates,whatsappFilter);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         web=new WebView(this); web.setBackgroundColor(Color.rgb(16,19,16));
         root=new FrameLayout(this);applyAppearance();
@@ -85,12 +90,13 @@ public final class MainActivity extends Activity {
     private JSONObject object(String key,Object value){JSONObject o=new JSONObject();try{o.put(key,value);}catch(Exception ignored){}return o;}
     private void toast(String message){event("notice",object("message",message));}
     private void state(String label){event("status",object("label",label));}
-    private void publish() throws Exception { event("messages",object("messages",repo.cached()));event("health",repo.syncState()); }
+    private JSONArray messages()throws Exception{JSONArray all=repo.cached(),wa=whatsApp.cached();for(int i=0;i<wa.length();i++)all.put(wa.getJSONObject(i));return MailRepository.sorted(all);}
+    private void publish() throws Exception { event("messages",object("messages",messages()));event("health",repo.syncState()); }
     private void composeState()throws Exception {event("compose",new JSONObject().put("files",repo.fileLabels()).put("replyId",repo.replyId()));}
     private void initial(){worker.submit(()->{try {
-        JSONObject init=new JSONObject().put("connected",repo.connected()).put("account",repo.account()).put("peer",repo.peer()).put("draft",repo.draft()).put("messages",repo.cached());
+        JSONObject init=new JSONObject().put("connected",repo.connected()||whatsApp.configured()).put("account",repo.account()).put("peer",repo.peer()).put("draft",repo.draft()).put("messages",messages());
         if(Intent.ACTION_SEND.equals(getIntent().getAction())) {String shared=getIntent().getStringExtra(Intent.EXTRA_TEXT); if(shared!=null) init.put("draft",shared);}
-        event("init",init);composeState();event("health",repo.syncState());notificationState();cadenceState();appearanceState();if(repo.connected()){SyncJob.schedule(this);refresh(false);}
+        event("init",init);composeState();event("health",repo.syncState());notificationState();cadenceState();appearanceState();whatsAppState();if(repo.connected()){SyncJob.schedule(this);refresh(false);}
     }catch(Exception e){toast("Could not read encrypted storage. Reconnect Gmail in settings.");}});}
     private void refresh(boolean manual){
         if(!loaded||!syncing.compareAndSet(false,true))return;
@@ -127,6 +133,8 @@ public final class MainActivity extends Activity {
         finally{try{composeState();}catch(Exception ignored){}event("fileBusy",object("busy",false));}});
     }
     private void notificationState(){try{event("notifications",new JSONObject().put("enabled",ReplyNotifications.enabled(this)).put("allowed",ReplyNotifications.allowed(this)));}catch(JSONException ignored){}}
+    private boolean notificationAccess(){String enabled=Settings.Secure.getString(getContentResolver(),"enabled_notification_listeners");return enabled!=null&&enabled.contains(getPackageName()+"/");}
+    private void whatsAppState(){try{event("whatsapp",new JSONObject().put("configured",whatsApp.configured()).put("chat",whatsApp.chat()).put("phone",whatsApp.phone()).put("access",notificationAccess()).put("replyReady",WhatsAppNotificationService.replyReady(whatsApp.chat())));}catch(Exception ignored){}}
     private void notificationSettings(){try{startActivity(new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID,ReplyNotifications.CHANNEL));}catch(ActivityNotFoundException e){startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);notificationState();}
     private void connectDialog(){
@@ -151,13 +159,25 @@ public final class MainActivity extends Activity {
             });
         });dialog.show();
     }
+    private void whatsAppDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);int pad=(int)(24*getResources().getDisplayMetrics().density);box.setPadding(pad,pad/2,pad,pad/2);
+        TextView info=new TextView(this);info.setText("Instinct will mirror notifications only from this exact WhatsApp chat. Replies use WhatsApp's own notification reply action. No unofficial login, message scraping, or WhatsApp password is used.");info.setTextSize(15);box.addView(info);
+        EditText chat=new EditText(this);chat.setSingleLine();chat.setHint("Exact chat name, for example Instinct");box.addView(chat);
+        EditText phone=new EditText(this);phone.setSingleLine();phone.setHint("Instinct number with country code (optional)");phone.setInputType(InputType.TYPE_CLASS_PHONE);box.addView(phone);
+        try{chat.setText(whatsApp.chat());phone.setText(whatsApp.phone());}catch(Exception ignored){}
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Connect WhatsApp").setView(box).setNegativeButton("Cancel",null).setNeutralButton("Notification access",null).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(d->{
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{try{startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));}catch(Exception e){toast("Open Android Settings and allow notification access for Instinct.");}});
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{whatsApp.configure(chat.getText().toString(),phone.getText().toString());dialog.dismiss();whatsAppState();initial();if(!notificationAccess())toast("Now allow Instinct notification access, then have Instinct send one WhatsApp reply.");else toast("WhatsApp is connected. The next Instinct reply will appear here.");}catch(Exception e){chat.setError(e.getMessage());}});
+        });dialog.show();
+    }
     private void openExternal(String url){
         Uri uri=Uri.parse(url);if(!"https".equals(uri.getScheme())&&!"http".equals(uri.getScheme()))return;
         try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(Exception e){toast("No browser is available to open this link.");}
     }
-    @Override protected void onResume(){super.onResume();active=true;ReplyNotifications.foreground=true;getSystemService(NotificationManager.class).cancel(100);notificationState();cadenceState();appearanceState();handler.postDelayed(ticker,1000);}
+    @Override protected void onResume(){super.onResume();active=true;ReplyNotifications.foreground=true;getSystemService(NotificationManager.class).cancel(100);notificationState();cadenceState();appearanceState();whatsAppState();handler.postDelayed(ticker,1000);}
     @Override protected void onPause(){active=false;ReplyNotifications.foreground=false;handler.removeCallbacks(ticker);super.onPause();}
-    @Override protected void onDestroy(){handler.removeCallbacks(ticker);worker.shutdown();storage.shutdown();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
+    @Override protected void onDestroy(){handler.removeCallbacks(ticker);try{unregisterReceiver(whatsAppUpdates);}catch(Exception ignored){}worker.shutdown();storage.shutdown();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
     private final class Bridge {
         @JavascriptInterface public void haptic(){runOnUiThread(()->web.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK));}
         @JavascriptInterface public void notificationState(){runOnUiThread(()->MainActivity.this.notificationState());}
@@ -177,6 +197,8 @@ public final class MainActivity extends Activity {
             runOnUiThread(()->{appearancePreferences().edit().putString("accent",value).apply();appearanceState();});
         }
         @JavascriptInterface public void connect(){runOnUiThread(()->connectDialog());}
+        @JavascriptInterface public void connectWhatsApp(){runOnUiThread(()->whatsAppDialog());}
+        @JavascriptInterface public void openWhatsApp(){runOnUiThread(()->{try{if(!WhatsAppNotificationService.open(MainActivity.this,whatsApp.phone()))toast("Add Instinct's WhatsApp number in connection settings first.");}catch(Exception e){toast("WhatsApp is not connected yet.");}});}
         @JavascriptInterface public void refresh(){runOnUiThread(()->MainActivity.this.refresh(true));}
         @JavascriptInterface public void attach(){runOnUiThread(()->pickAttachment());}
         @JavascriptInterface public void removeAttachment(int index){if(sending.get())return;worker.submit(()->{try{repo.removeFile(index);composeState();}catch(Exception e){toast("Could not remove attachment.");}});}
@@ -186,11 +208,12 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void dictate(){runOnUiThread(()->{try{startActivityForResult(new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT,"Dictate a draft for Instinct"),21);}catch(ActivityNotFoundException e){toast("Use the microphone on your keyboard to dictate a message.");}});}
         @JavascriptInterface public void loadOlder(){if(!syncing.compareAndSet(false,true))return;event("sync",object("busy",true));worker.submit(()->{try{repo.sync(true);publish();}catch(Exception e){toast(MailRepository.friendly(e));}finally{syncing.set(false);event("sync",object("busy",false));}});}
         @JavascriptInterface public void saveDraft(String value){if(value.length()<=30000)worker.submit(()->{try{repo.draft(value);}catch(Exception e){toast("Draft could not be saved.");}});}
-        @JavascriptInterface public void send(String text){
+        @JavascriptInterface public void send(String text,String channel){
             if(!sending.compareAndSet(false,true))return;
-            state("Sending via Gmail…");
-            worker.submit(()->{try{repo.send(text);publish();event("sent",new JSONObject());composeState();state("Sent via Gmail · awaiting reply");}
-                catch(Exception e){try{publish();}catch(Exception ignored){}event("sendError",object("message","Send was not confirmed. Check the message status and Gmail before sending again. Nothing is retried automatically."));state("Check send status");}
+            state("whatsapp".equals(channel)?"Sending through WhatsApp…":"Sending via Gmail…");
+            worker.submit(()->{try{if("whatsapp".equals(channel)){WhatsAppNotificationService.reply(MainActivity.this,whatsApp.chat(),text);repo.draft("");publish();event("sent",new JSONObject());state("Handed to WhatsApp");}
+                    else{repo.send(text);publish();event("sent",new JSONObject());composeState();state("Sent via Gmail · awaiting reply");}}
+                catch(Exception e){try{publish();}catch(Exception ignored){}String message="whatsapp".equals(channel)?e.getMessage():"Send was not confirmed. Check the message status and Gmail before sending again. Nothing is retried automatically.";event("sendError",object("message",message));state("Check send status");}
                 finally{sending.set(false);}});
         }
         @JavascriptInterface public void openGmail(){worker.submit(()->{try{String url="https://mail.google.com/mail/u/?authuser="+Uri.encode(repo.account())+"#search/"+Uri.encode(repo.peer());runOnUiThread(()->openExternal(url));}catch(Exception e){toast("Connect Gmail first.");}});}
