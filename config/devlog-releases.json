@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.0.8",
+    "date": "2026-09-12",
+    "title": "Add focused WhatsApp bridge and message previews",
+    "summary": "Source update. See the linked commit for details.",
+    "notes": [
+      "Add focused WhatsApp bridge and message previews"
+    ],
+    "commit": "915fc0e7a6cbcc9f95f13a8c0cdf5ce45bbaf949",
+    "author": {
+      "name": "Ari Bradshaw",
+      "githubLogin": "aribradshaw"
+    }
+  },
+  {
     "version": "1.0.7",
     "date": "2026-09-11",
     "title": "Render image attachments inline in chats and drafts",
