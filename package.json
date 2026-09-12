@@ -1,0 +1,14 @@
+{
+  "name": "instinct-android",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An unofficial Android chat companion for Instinct, powered by your Gmail connection.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build:devlog": "node scripts/build-devlog.mjs",
+    "check:public": "node scripts/check-public.mjs"
+  },
+  "dependencies": { "@aribradshaw/devlog": "1.0.4" },
+  "devDependencies": { "esbuild": "0.25.9" }
+}

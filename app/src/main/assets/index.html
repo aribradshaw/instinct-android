@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'"><title>Instinct</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="app">
+ <header>
+  <div class="brand"><div class="avatar"><svg viewBox="0 0 24 24"><path d="M14 2 5 14h6l-1 8 9-12h-6z"/></svg></div><div><h1>instinct</h1><div id="status"><i></i><span id="statusText">Your private line</span></div></div></div>
+  <div class="header-actions"><button class="icon" id="themeButton" aria-label="Switch to light mode" title="Switch to light mode"><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="moon" viewBox="0 0 24 24"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg></button><button class="icon" id="settingsButton" aria-label="Conversation settings"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 17h14"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></button></div>
+ </header>
+ <div class="channel"><span><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Your conversation, connected by email</span><button id="refreshButton" aria-label="Refresh messages"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M18 17a7 7 0 0 1-12 1l-2-3"/></svg></button></div>
+ <main id="timeline" aria-label="Conversation">
+  <section id="welcome">
+   <div class="eyebrow">A DIRECT LINE TO YOUR INSTINCT</div>
+   <h2>Same instinct.<br><span>Fresh connection.</span></h2>
+   <p>All your questions, ideas, and next moves.<br>One familiar conversation.</p>
+   <div class="orbit"><div class="orbit-ring ring1"></div><div class="orbit-ring ring2"></div><div class="spark"><svg viewBox="0 0 24 24"><path d="M14 2 5 14h6l-1 8 9-12h-6z"/></svg></div><span class="satellite">✦</span></div>
+   <div class="connect-card"><div class="card-top"><span class="tiny-bolt">↗</span><span>LET’S PICK UP WHERE YOU LEFT OFF</span></div><h3>Your chat is already waiting.</h3><p>Connect Gmail to bring your Instinct emails into a real conversation. Replies go straight back to the same thread.</p><button class="primary" id="connectButton">Connect my Gmail <span>↗</span></button><div class="account" id="accountLabel">Your Gmail account</div></div>
+   <div class="footnote">Personal companion · Works independently of WhatsApp</div>
+  </section>
+  <div id="messages" hidden></div>
+  <div id="empty" hidden><h2>You’re connected.</h2><p>Send your first message to Instinct below.</p></div>
+ </main>
+ <footer id="composer" hidden><div id="sendWarning" hidden></div><div class="compose-box"><textarea id="draft" rows="1" maxlength="30000" placeholder="Message Instinct…" aria-label="Message Instinct"></textarea><button id="sendButton" class="send" aria-label="Send message" disabled><svg viewBox="0 0 24 24"><path d="m6 12 6-6 6 6M12 6v13"/></svg></button></div></footer>
+ <div id="notice" role="status" hidden></div>
+</div>
+<dialog id="settings"><div class="sheet-grip"></div><div class="sheet-heading"><h2>Your connection</h2><button class="icon" id="closeSettings" aria-label="Close settings">✕</button></div><div class="setting-card"><span class="eyebrow">SENDING FROM</span><p id="accountValue">Your Gmail account</p><span class="eyebrow">TALKING TO</span><p id="peerValue">Your Instinct address</p></div><p class="details">A personal email companion for Instinct. Your app password, messages, and draft are encrypted on this phone. No relay server.</p><p class="details">Refreshes every 15 seconds while open. Background notifications use Android’s periodic checks, about every 15 minutes or longer under battery restrictions. Email replies may take a little time.</p><button class="menu-row" id="gmailButton">Open conversation in Gmail <span>↗</span></button><button class="menu-row" id="reconnectButton">Connect or update app password <span>↗</span></button><button class="menu-row" id="devlogButton">Public DevLog <span>↗</span></button><button class="menu-row danger" id="disconnectButton">Disconnect and clear local data <span>×</span></button><div class="version">INSTINCT COMPANION / 0.1.0 / PERSONAL BUILD</div></dialog>
+<dialog id="original"><div class="sheet-heading"><h2>Original email</h2><button class="icon" id="closeOriginal" aria-label="Close original email">✕</button></div><pre id="originalBody"></pre></dialog>
+<script src="app.js"></script>
+</body></html>

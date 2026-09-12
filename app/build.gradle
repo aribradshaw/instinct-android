@@ -1,0 +1,27 @@
+plugins { id 'com.android.application' }
+def localSigning = new Properties()
+if (rootProject.file('local.properties').exists()) rootProject.file('local.properties').withInputStream { localSigning.load(it) }
+android {
+    namespace 'app.instinct.personal'
+    compileSdk 36
+    defaultConfig { applicationId 'app.instinct.personal'; minSdk 30; targetSdk 35; versionCode 1; versionName '0.1.0'; testInstrumentationRunner 'android.test.InstrumentationTestRunner' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    signingConfigs {
+        release {
+            if (localSigning.getProperty('signing.storeFile')) {
+                storeFile file(localSigning.getProperty('signing.storeFile'))
+                storePassword localSigning.getProperty('signing.storePassword')
+                keyAlias localSigning.getProperty('signing.keyAlias')
+                keyPassword localSigning.getProperty('signing.keyPassword')
+            }
+        }
+    }
+    buildTypes { release { debuggable false; minifyEnabled false; signingConfig signingConfigs.release } }
+    packaging { resources { excludes += ['META-INF/NOTICE.md', 'META-INF/LICENSE.md', 'META-INF/DEPENDENCIES'] } }
+}
+dependencies {
+    implementation 'org.eclipse.angus:jakarta.mail:2.0.3'
+    implementation 'org.eclipse.angus:angus-activation:2.0.2'
+    implementation 'jakarta.activation:jakarta.activation-api:2.1.3'
+    testImplementation 'junit:junit:4.13.2'
+}

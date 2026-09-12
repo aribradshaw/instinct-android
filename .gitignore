@@ -1,0 +1,11 @@
+.gradle/
+**/build/
+local.properties
+evidence/
+*.jks
+*.keystore
+private/
+node_modules/
+site/dist/
+dist/
+*.log

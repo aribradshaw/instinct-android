@@ -1,0 +1,169 @@
+package app.instinct.personal;
+
+import android.content.Context;
+import android.text.Html;
+import org.json.*;
+import java.util.*;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import jakarta.mail.*;
+import jakarta.mail.internet.*;
+import jakarta.mail.search.*;
+import org.eclipse.angus.mail.imap.IMAPFolder;
+
+final class MailRepository {
+    static final String SUBJECT = "Instinct conversation";
+    private static MailRepository instance;
+    private final Vault vault;
+    private MailRepository(Context c) { vault = new Vault(c); }
+    static synchronized MailRepository get(Context c) { if (instance == null) instance = new MailRepository(c); return instance; }
+    synchronized boolean connected() throws Exception { return !vault.read("account.enc", "").isEmpty()&&!account().isEmpty()&&!peer().isEmpty(); }
+    synchronized String account() throws Exception { return new JSONObject(vault.read("config.enc","{}")).optString("account"); }
+    synchronized String peer() throws Exception { return new JSONObject(vault.read("config.enc","{}")).optString("peer"); }
+    synchronized String draft() throws Exception { return vault.read("draft.enc", ""); }
+    synchronized void draft(String text) throws Exception { vault.write("draft.enc", text); }
+    synchronized void disconnect() { vault.clear(); }
+    private Properties properties() {
+        Properties p = new Properties();
+        for (String protocol : new String[]{"imaps", "smtps"}) {
+            p.setProperty("mail." + protocol + ".ssl.checkserveridentity", "true");
+            p.setProperty("mail." + protocol + ".connectiontimeout", "15000");
+            p.setProperty("mail." + protocol + ".timeout", "20000");
+            p.setProperty("mail." + protocol + ".writetimeout", "20000");
+        }
+        p.setProperty("mail.imaps.peek", "true");
+        p.setProperty("mail.smtps.auth", "true");
+        return p;
+    }
+    synchronized void connect(String account,String peer,String password) throws Exception {
+        account=account.trim().toLowerCase(Locale.ROOT);peer=peer.trim().toLowerCase(Locale.ROOT);
+        InternetAddress from=new InternetAddress(account,true), to=new InternetAddress(peer,true);from.validate();to.validate();
+        if(!account.endsWith("@gmail.com")||account.equals(peer)||!peer.endsWith("@mail.instinct.com")) throw new IllegalArgumentException("Enter your Gmail address and the exact @mail.instinct.com address Instinct gave you.");
+        String clean = password.replaceAll("\\s", "");
+        if (!clean.matches("[a-zA-Z]{16}")) throw new IllegalArgumentException("Use the 16-letter Google app password, not your Gmail password.");
+        Session session = Session.getInstance(properties());
+        try (Store store = session.getStore("imaps")) { store.connect("imap.gmail.com", 993, account, clean); }
+        try (Transport transport = session.getTransport("smtps")) { transport.connect("smtp.gmail.com", 465, account, clean); }
+        if(!account().equals(account)||!peer().equals(peer)) vault.clear();
+        vault.write("config.enc",new JSONObject().put("account",account).put("peer",peer).toString());
+        vault.write("account.enc", clean);
+    }
+    synchronized JSONArray cached() throws Exception {
+        JSONArray result = new JSONArray(vault.read("messages.enc", "[]"));
+        JSONArray pending = new JSONArray(vault.read("pending.enc", "[]"));
+        for (int i = 0; i < pending.length(); i++) result.put(pending.getJSONObject(i));
+        return sorted(result);
+    }
+    static JSONArray sorted(JSONArray data) throws JSONException {
+        List<JSONObject> list = new ArrayList<>();
+        for (int i = 0; i < data.length(); i++) list.add(data.getJSONObject(i));
+        list.sort(Comparator.comparingLong(a -> a.optLong("time")));
+        JSONArray result = new JSONArray(); for (JSONObject value : list) result.put(value); return result;
+    }
+    private boolean contains(Address[] addresses, String wanted) {
+        if (addresses == null) return false;
+        for (Address a : addresses) if (a instanceof InternetAddress && MailText.exactAddress(((InternetAddress) a).getAddress(), wanted)) return true;
+        return false;
+    }
+    private String content(Part part, int depth) throws Exception {
+        if (depth > 12 || Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())) return "";
+        if (part.isMimeType("text/plain") || part.isMimeType("text/html")) {
+            if (part.getSize() > 1024 * 1024) return "[Large email. Open in Gmail to read.]";
+            Object c = part.getContent(); String text = c instanceof String ? (String)c : "";
+            return part.isMimeType("text/html") ? Html.fromHtml(text, Html.FROM_HTML_MODE_LEGACY).toString() : text;
+        }
+        if (part.isMimeType("multipart/*")) {
+            Multipart multi = (Multipart)part.getContent();
+            if (part.isMimeType("multipart/alternative")) {
+                for (int i=0;i<multi.getCount();i++) if (multi.getBodyPart(i).isMimeType("text/plain")) return content(multi.getBodyPart(i),depth+1);
+            }
+            StringBuilder text = new StringBuilder();
+            for (int i=0;i<multi.getCount();i++) {
+                String child = content(multi.getBodyPart(i),depth+1);
+                if (!child.isBlank()) { text.append(child).append("\n"); if (part.isMimeType("multipart/alternative")) break; }
+            }
+            return text.toString();
+        }
+        return "";
+    }
+    private void attachments(Part part, JSONArray target, int depth) throws Exception {
+        if (depth > 12) return;
+        if (part.getFileName() != null) { target.put(MimeUtility.decodeText(part.getFileName())); return; }
+        if (part.isMimeType("multipart/*")) {
+            Multipart multi=(Multipart)part.getContent();
+            for(int i=0;i<multi.getCount();i++) attachments(multi.getBodyPart(i),target,depth+1);
+        }
+    }
+    synchronized JSONArray sync() throws Exception {
+        String ACCOUNT=account(),PEER=peer();
+        String password = vault.read("account.enc", "");
+        if (password.isEmpty()) return cached();
+        LinkedHashMap<String,JSONObject> map = new LinkedHashMap<>();
+        JSONArray old = new JSONArray(vault.read("messages.enc", "[]"));
+        for(int i=0;i<old.length();i++) { JSONObject item=old.getJSONObject(i); map.put(item.getString("id"),item); }
+        try (Store store = Session.getInstance(properties()).getStore("imaps")) {
+            store.connect("imap.gmail.com", 993, ACCOUNT, password);
+            Folder all = null;
+            for (Folder f : store.getDefaultFolder().list("*")) {
+                if(f instanceof IMAPFolder) for(String attribute : ((IMAPFolder)f).getAttributes())
+                    if(attribute.equalsIgnoreCase("\\All")) all=f;
+            }
+            if(all==null) throw new MessagingException("Gmail All Mail is unavailable over IMAP. Enable Show in IMAP for All Mail in Gmail settings.");
+            all.open(Folder.READ_ONLY);
+            SearchTerm peers = new OrTerm(new FromTerm(new InternetAddress(PEER)),new RecipientTerm(Message.RecipientType.TO,new InternetAddress(PEER)));
+            Message[] messages=all.search(peers);
+            int start=Math.max(0,messages.length-200);
+            Message[] recent=Arrays.copyOfRange(messages,start,messages.length);
+            FetchProfile profile=new FetchProfile(); profile.add(FetchProfile.Item.ENVELOPE); profile.add("Message-ID"); profile.add("References");
+            all.fetch(recent,profile);
+            for(Message msg:recent) {
+                boolean outgoing=contains(msg.getFrom(),ACCOUNT)&&contains(msg.getRecipients(Message.RecipientType.TO),PEER);
+                boolean incoming=contains(msg.getFrom(),PEER)&&contains(msg.getAllRecipients(),ACCOUNT);
+                if(!incoming&&!outgoing) continue;
+                String[] ids=msg.getHeader("Message-ID");
+                String id=ids!=null&&ids.length>0?ids[0]:"imap-"+((IMAPFolder)all).getUIDValidity()+"-"+((IMAPFolder)all).getUID(msg);
+                if(map.containsKey(id)) continue;
+                String raw=content(msg,0).trim(); JSONArray files=new JSONArray(); attachments(msg,files,0);
+                Date date=msg.getSentDate()!=null?msg.getSentDate():msg.getReceivedDate();
+                map.put(id,new JSONObject().put("id",id).put("outgoing",outgoing).put("text",MailText.conversational(raw)).put("raw",raw)
+                    .put("time",date!=null?date.getTime():System.currentTimeMillis()).put("subject",msg.getSubject()).put("attachments",files).put("status",outgoing?"sent":"received"));
+            }
+            all.close(false);
+        }
+        JSONArray pending=new JSONArray(vault.read("pending.enc","[]")), keep=new JSONArray();
+        for(int i=0;i<pending.length();i++) if(!map.containsKey(pending.getJSONObject(i).getString("id"))) keep.put(pending.getJSONObject(i));
+        JSONArray result=new JSONArray(); for(JSONObject item:map.values()) result.put(item);
+        vault.write("messages.enc",sorted(result).toString()); vault.write("pending.enc",keep.toString());
+        return cached();
+    }
+    synchronized void send(String text) throws Exception {
+        String ACCOUNT=account(),PEER=peer();
+        if(text.isBlank()||text.length()>30000) throw new IllegalArgumentException("Write a message of up to 30,000 characters.");
+        String password=vault.read("account.enc",""); if(password.isEmpty()) throw new IllegalStateException("Connect Gmail first.");
+        Session session=Session.getInstance(properties());
+        JSONArray history=cached(); JSONObject reply=null;
+        for(int i=history.length()-1;i>=0;i--) { JSONObject item=history.getJSONObject(i); if(item.optString("status").equals("received")) { reply=item; break; } }
+        String subject=reply!=null?reply.optString("subject",SUBJECT):SUBJECT;
+        MimeMessage msg=OutboundMail.create(session,text,ACCOUNT,PEER,subject,reply!=null?reply.getString("id"):null);
+        JSONObject pending=new JSONObject().put("id",msg.getMessageID()).put("outgoing",true).put("text",text).put("raw",text)
+            .put("time",System.currentTimeMillis()).put("subject",msg.getSubject()).put("status","unconfirmed").put("attachments",new JSONArray());
+        JSONArray queue=new JSONArray(vault.read("pending.enc","[]")); queue.put(pending); vault.write("pending.enc",queue.toString());
+        boolean submitted=false;
+        try (Transport transport=session.getTransport("smtps")) {
+            transport.connect("smtp.gmail.com",465,ACCOUNT,password);
+            submitted=true; transport.sendMessage(msg,msg.getAllRecipients());
+            pending.put("status","sent"); vault.write("pending.enc",queue.toString()); vault.write("draft.enc","");
+        } catch(Exception e) {
+            if(pending.optString("status").equals("sent")) return;
+            // A disconnect after SMTP DATA can still mean delivery. Never automatically resend.
+            if(!submitted) { pending.put("status","failed"); vault.write("pending.enc",queue.toString()); }
+            throw e;
+        }
+    }
+    static String friendly(Exception e) {
+        if(e instanceof AuthenticationFailedException) return "Google rejected the connection. Check the app password for the Gmail address you entered.";
+        if(e instanceof IllegalArgumentException || e instanceof IllegalStateException) return e.getMessage();
+        if(e instanceof java.net.UnknownHostException) return "No connection. Your messages and draft are saved on this phone.";
+        return "Connection did not finish. Check your internet and Gmail connection, then refresh.";
+    }
+}
